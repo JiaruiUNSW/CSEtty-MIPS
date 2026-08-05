@@ -1,0 +1,9 @@
+csetty-mips
+Copyright 2026 csetty-mips contributors
+
+This Source Code Form is subject to the terms of the Mozilla Public License,
+v. 2.0. If a copy of the MPL was not distributed with this file, You can
+obtain one at https://mozilla.org/MPL/2.0/.
+
+csetty-mips is an independent implementation. It contains no upstream mipsy
+source or binary.
