@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "csetty-mips"
-version = "0.1.0"
+version = "0.1.1"
 description = "An independent educational MIPS32 assembler, simulator, and debugger"
 readme = "README.md"
 license = "MPL-2.0"
@@ -25,9 +25,9 @@ dev = [
 csetty-mips = "csetty_mips.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/JiaruiUNSW/CSEtty_MIPS"
-Repository = "https://github.com/JiaruiUNSW/CSEtty_MIPS.git"
-Issues = "https://github.com/JiaruiUNSW/CSEtty_MIPS/issues"
+Homepage = "https://github.com/JiaruiUNSW/CSEtty-MIPS"
+Repository = "https://github.com/JiaruiUNSW/CSEtty-MIPS.git"
+Issues = "https://github.com/JiaruiUNSW/CSEtty-MIPS/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]

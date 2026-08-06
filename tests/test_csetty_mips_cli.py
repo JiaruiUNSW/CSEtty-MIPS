@@ -280,7 +280,7 @@ def test_cli_move_label_step_limit_stdin_source_and_version(tmp_path: Path) -> N
         text=True,
     )
     assert version.returncode == 0
-    assert version.stdout.strip() == "csetty-mips 0.1.0"
+    assert version.stdout.strip() == "csetty-mips 0.1.1"
 
 
 def test_debugger_break_step_reverse_and_disassemble() -> None:
