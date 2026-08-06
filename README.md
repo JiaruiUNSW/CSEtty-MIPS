@@ -18,7 +18,7 @@ UNSW School of Computer Science and Engineering.
 Python 3.11 or newer is required.
 
 ```sh
-python3 -m pip install git+https://github.com/JiaruiUNSW/CSEtty_MIPS.git@v0.1.0
+python3 -m pip install git+https://github.com/JiaruiUNSW/CSEtty-MIPS.git@v0.1.0
 ```
 
 For an editable development checkout:
