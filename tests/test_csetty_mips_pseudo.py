@@ -24,6 +24,46 @@ def test_course_stack_frame_and_immediate_mul_pseudos() -> None:
     assert machine.read_register(29) == machine.read_register(30)
 
 
+def test_division_result_pseudos_accept_small_and_full_width_immediate_divisors() -> None:
+    machine = _run(
+        ".eqv FULL_WIDTH, 0x10000\n"
+        ".text\nmain:\n"
+        " li $t0, -17\n"
+        " div $s0, $t0, 5\n rem $s1, $t0, 5\n"
+        " li $t0, 0xfffffff1\n"
+        " divu $s2, $t0, 5\n remu $s3, $t0, 5\n"
+        " li $t0, 0x20000\n div $s4, $t0, FULL_WIDTH\n"
+        " jr $ra\n"
+    )
+    assert tuple(machine.read_register(index) for index in range(16, 21)) == (
+        0xFFFF_FFFD,
+        0xFFFF_FFFE,
+        0x3333_3330,
+        1,
+        2,
+    )
+
+
+@pytest.mark.parametrize("operation", ("div", "divu", "rem", "remu"))
+def test_immediate_divisor_expansion_obeys_reserved_at_controls(operation: str) -> None:
+    with pytest.raises(AssemblyError) as noat:
+        assemble(
+            [
+                SourceUnit(
+                    "division-noat.s",
+                    f".set noat\n.text\nmain: {operation} $s0, $t0, 2\n",
+                )
+            ]
+        )
+    assert noat.value.code == "A241"
+
+    with pytest.raises(AssemblyError) as collision:
+        assemble(
+            [SourceUnit("division-at.s", f".text\nmain: {operation} $s0, $at, 2\n")]
+        )
+    assert collision.value.code == "A230"
+
+
 def test_immediate_branch_overloads_cover_small_and_full_width_values() -> None:
     machine = _run(
         ".text\nmain:\n"

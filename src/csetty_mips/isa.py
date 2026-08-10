@@ -259,7 +259,7 @@ def is_supported_encoding(word: int) -> bool:
         if funct == 0x02:
             return shamt == 0
         if funct in {0x20, 0x21}:
-            return rt == 0 and shamt == 0
+            return rt == rd and shamt == 0
         return False
     if opcode == 0x1F:
         return funct == 0x20 and rs == 0 and shamt in {0x10, 0x18}

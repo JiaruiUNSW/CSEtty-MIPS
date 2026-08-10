@@ -74,7 +74,7 @@ faulting atomicity, and all four offsets for unaligned word operations.
 | Relational branch | `blt ble bgt bge bltu bleu bgtu bgeu` | verified |
 | Relational set | `seq sne sge sgt sle sgeu sgtu sleu` | verified |
 | Immediate set aliases | `seqi snei sgei sgti slei sequi sneui sgeui sgtui sleui` | verified |
-| Arithmetic | `abs`, immediate `mul`, 3-operand `div/divu`, `rem/remu` | verified |
+| Arithmetic | `abs`, immediate `mul`, 3-operand `div/divu`, `rem/remu` with register or immediate divisors | verified |
 | Rotate | register/immediate `rol ror` | verified |
 | Course stack frame | `push pop begin end` | verified |
 | Trap aliases | `tgt tgtu tgti tgtiu tle tleu tlei tleiu` | verified |
