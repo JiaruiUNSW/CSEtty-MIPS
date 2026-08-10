@@ -201,6 +201,8 @@ def _uses_assembler_temporary(statement: ParsedStatement, words: int) -> bool:
         return words != 1
     if operation == "mul":
         return not _looks_like_register(statement.operands[2])
+    if operation in {"div", "divu", "rem", "remu"} and len(statement.operands) == 3:
+        return not _looks_like_register(statement.operands[2])
     if operation in {"beq", "bne"}:
         return not _looks_like_register(statement.operands[1])
     if operation in {"blt", "ble", "bgt", "bge", "bltu", "bleu", "bgtu", "bgeu"}:
@@ -327,7 +329,11 @@ def _pseudo_word_count(statement: ParsedStatement) -> int:
         return 3
     if operation in {"rem", "remu"}:
         _operand_count(operation, operands, 3, statement.source)
-        return 2
+        return (
+            2
+            if _looks_like_register(operands[2])
+            else _load_word_count(operands[2], statement.source) + 2
+        )
     if operation in {"rol", "ror"}:
         _operand_count(operation, operands, 3, statement.source)
         if not _looks_like_register(operands[2]):
@@ -370,7 +376,11 @@ def _instruction_word_count(statement: ParsedStatement) -> int:
     if operation in _PSEUDO_INSTRUCTIONS:
         return _pseudo_word_count(statement)
     if operation in {"div", "divu"} and len(statement.operands) == 3:
-        return 2
+        return (
+            2
+            if _looks_like_register(statement.operands[2])
+            else _load_word_count(statement.operands[2], statement.source) + 2
+        )
     if operation in ALL_REAL_INSTRUCTIONS:
         return 1
     inventory = sorted(ALL_REAL_INSTRUCTIONS | _PSEUDO_INSTRUCTIONS)
@@ -708,6 +718,40 @@ def _expand_load(
     ]
 
 
+def _expand_division_result(
+    operation: str,
+    operands: Sequence[str],
+    *,
+    result_instruction: str,
+    symbols: Mapping[str, int],
+    source: SourceRef,
+    expected_words: int,
+) -> list[tuple[str, tuple[str, ...]]]:
+    divisor = operands[2]
+    loaded: list[tuple[str, tuple[str, ...]]] = []
+    selected_divisor = divisor
+    if not _looks_like_register(divisor):
+        if parse_register(operands[1], source) == 1:
+            raise AssemblyError(
+                "A230",
+                "$at cannot be the dividend when an immediate divisor needs expansion",
+                source,
+            )
+        loaded = _expand_load(
+            "$at",
+            divisor,
+            symbols=symbols,
+            source=source,
+            expected_words=expected_words - 2,
+        )
+        selected_divisor = "$at"
+    return [
+        *loaded,
+        (operation, (operands[1], selected_divisor)),
+        (result_instruction, (operands[0],)),
+    ]
+
+
 def _expand_pseudo(
     operation: str,
     operands: Sequence[str],
@@ -910,7 +954,14 @@ def _expand_pseudo(
         ]
     if operation in {"rem", "remu"}:
         divide = "divu" if operation == "remu" else "div"
-        return [(divide, (operands[1], operands[2])), ("mfhi", (operands[0],))]
+        return _expand_division_result(
+            divide,
+            operands,
+            result_instruction="mfhi",
+            symbols=symbols,
+            source=source,
+            expected_words=expected_words,
+        )
     if operation in {"rol", "ror"}:
         if _looks_like_register(operands[2]):
             if operation == "ror":
@@ -1133,7 +1184,7 @@ def _encode_real(
         _operand_count(operation, operands, 3 if operation == "mul" else 2, source)
         rd = register(operands[0])
         rs = register(operands[1])
-        rt = register(operands[2]) if operation == "mul" else 0
+        rt = register(operands[2]) if operation == "mul" else rd
         funct = {"mul": 0x02, "clz": 0x20, "clo": 0x21}[operation]
         return (0x1C << 26) | encode_r(rs, rt, rd, 0, funct)
     if operation in {"seb", "seh"}:
@@ -1341,10 +1392,14 @@ def assemble(
                 expected_words=item.size // 4,
             )
         elif operation in {"div", "divu"} and len(statement.operands) == 3:
-            expanded = [
-                (operation, (statement.operands[1], statement.operands[2])),
-                ("mflo", (statement.operands[0],)),
-            ]
+            expanded = _expand_division_result(
+                operation,
+                statement.operands,
+                result_instruction="mflo",
+                symbols=visible_symbols,
+                source=statement.source,
+                expected_words=item.size // 4,
+            )
         else:
             expanded = [(operation, statement.operands)]
         if len(expanded) * 4 != item.size:

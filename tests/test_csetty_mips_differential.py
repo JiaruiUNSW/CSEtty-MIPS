@@ -92,8 +92,8 @@ def _encoding_cases() -> list[tuple[str, str, int]]:
             ("div", "div $t0, $t1", _r(8, 9, 0, 0, 0x1A)),
             ("divu", "divu $t0, $t1", _r(8, 9, 0, 0, 0x1B)),
             ("mul", "mul $s0, $t0, $t1", (0x1C << 26) | _r(8, 9, 16, 0, 0x02)),
-            ("clz", "clz $s0, $t0", (0x1C << 26) | _r(8, 0, 16, 0, 0x20)),
-            ("clo", "clo $s0, $t0", (0x1C << 26) | _r(8, 0, 16, 0, 0x21)),
+            ("clz", "clz $s0, $t0", (0x1C << 26) | _r(8, 16, 16, 0, 0x20)),
+            ("clo", "clo $s0, $t0", (0x1C << 26) | _r(8, 16, 16, 0, 0x21)),
             ("seb", "seb $s0, $t0", (0x1F << 26) | _r(0, 8, 16, 0x10, 0x20)),
             ("seh", "seh $s0, $t0", (0x1F << 26) | _r(0, 8, 16, 0x18, 0x20)),
             ("rotr", "rotr $s0, $t1, 4", _r(1, 9, 16, 4, 0x02)),
@@ -129,6 +129,18 @@ def test_every_real_instruction_has_the_architectural_encoding(
     )
     assert program.text_words[0] == expected
     assert not disassemble(expected, program.entry).startswith(".word")
+
+
+@pytest.mark.parametrize("funct", (0x20, 0x21))
+def test_clz_and_clo_require_the_r5_destination_in_both_rt_and_rd(funct: int) -> None:
+    noncanonical = (0x1C << 26) | _r(8, 0, 16, 0, funct)
+    program = assemble(
+        [SourceUnit("noncanonical-count.s", f".text\nmain: .word 0x{noncanonical:08x}\n")]
+    )
+    assert disassemble(noncanonical, program.entry) == f".word 0x{noncanonical:08x}"
+    with pytest.raises(RuntimeFault) as caught:
+        Machine(program).step()
+    assert caught.value.code == "R121"
 
 
 @pytest.mark.parametrize(

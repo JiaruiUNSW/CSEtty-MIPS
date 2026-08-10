@@ -146,6 +146,9 @@ push pop begin end tgt tgtu tgti tgtiu tle tleu tlei tleiu
 symbolic and full-width memory-address forms
 ```
 
+The divisor in the three-operand `div`, `divu`, `rem`, and `remu` forms may be
+a register or a 32-bit immediate expression.
+
 Assembler passes assign all four sections, expand pseudos deterministically,
 resolve local/global symbols and expressions, emit data plus real instruction
 words, validate canonical reserved fields, and create a per-word source map.
