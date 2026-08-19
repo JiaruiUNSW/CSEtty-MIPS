@@ -6,7 +6,7 @@ Legend: `verified` means implemented and covered by executable local evidence.
 
 Current verification snapshot:
 
-- package suite: `282 passed, 1 skipped` (the skip is only the optional local
+- package suite: `641 passed, 1 skipped` (the skip is only the optional local
   SPIM executable check);
 - Ruff: clean; strict mypy: clean for all 17 `csetty_mips` Python modules;
 - fresh-wheel installation and execution: Python 3.12/macOS;
@@ -71,11 +71,16 @@ faulting atomicity, and all four offsets for unaligned word operations.
 | Basic | `nop move clear not neg negu li la` | verified |
 | Unconditional/zero branch | `b bal beqz bnez` | verified |
 | Immediate branch overload | `beq bne` with a literal/expression | verified |
-| Relational branch | `blt ble bgt bge bltu bleu bgtu bgeu` | verified |
-| Relational set | `seq sne sge sgt sle sgeu sgtu sleu` | verified |
+| Relational branch | `blt ble bgt bge bltu bleu bgtu bgeu`, register or one immediate on either side | verified |
+| Relational set | `seq sne sge sgt sle sgeu sgtu sleu`, register or one immediate on either side | verified |
 | Immediate set aliases | `seqi snei sgei sgti slei sequi sneui sgeui sgtui sleui` | verified |
-| Arithmetic | `abs`, immediate `mul`, 3-operand `div/divu`, `rem/remu` with register or immediate divisors | verified |
-| Rotate | register/immediate `rol ror` | verified |
+| Arithmetic/logical overloads | two-operand self forms and one immediate source for `add addu sub subu and or xor nor slt sltu mul` | verified |
+| HI/LO and trap overloads | one immediate source for `mult multu div divu tge tgeu tlt tltu teq tne mthi mtlo` | verified |
+| Immediate-instruction shorthand | two-operand `addi addiu andi ori xori slti sltiu` | verified |
+| Shift/self overloads | two-operand shifts; immediate value source for `sll srl sra sllv srlv srav rotrv`; self `clz clo seb seh` | verified |
+| Unary self overloads | one-operand `abs neg negu not`; immediate-source `not` | verified |
+| Division/remainder | three-operand `div/divu/rem/remu` with one immediate source; two-operand self `rem/remu` | verified |
+| Rotate | two- or three-operand, register/immediate amount `rol ror` | verified |
 | Course stack frame | `push pop begin end` | verified |
 | Trap aliases | `tgt tgtu tgti tgtiu tle tleu tlei tleiu` | verified |
 | Address macros | label/expression, indirect, and combined symbolic memory forms | verified |

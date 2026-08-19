@@ -24,6 +24,86 @@ def test_course_stack_frame_and_immediate_mul_pseudos() -> None:
     assert machine.read_register(29) == machine.read_register(30)
 
 
+def test_add_and_addu_accept_immediate_overloads() -> None:
+    program = assemble(
+        [
+            SourceUnit(
+                "add-immediate.s",
+                ".text\nmain:\n"
+                " li $a2, 41\n"
+                " add $a1, $a2, 1\n"
+                " addu $s0, $a1, 0xffffffff\n"
+                " jr $ra\n",
+            )
+        ]
+    )
+    machine = Machine(program)
+    machine.run()
+
+    assert machine.read_register(5) == 42
+    assert machine.read_register(16) == 41
+    assert program.source_map[program.entry + 4].rendered == "addiu $at, $zero, 1"
+    assert program.source_map[program.entry + 8].rendered == "add $a1, $a2, $at"
+    assert program.source_map[program.entry + 20].rendered == "addu $s0, $a1, $at"
+
+
+def test_add_immediate_preserves_signed_overflow_semantics() -> None:
+    program = assemble(
+        [
+            SourceUnit(
+                "add-overflow.s",
+                ".text\nmain:\n li $t0, 0x7fffffff\n add $t1, $t0, 1\n",
+            )
+        ]
+    )
+    machine = Machine(program)
+
+    with pytest.raises(RuntimeFault) as caught:
+        machine.run()
+    assert caught.value.code == "R109"
+    assert caught.value.source is not None
+    assert caught.value.source.line == 4
+
+
+def test_add_register_form_remains_a_real_instruction() -> None:
+    program = assemble(
+        [SourceUnit("add-register.s", ".text\nmain: add $a1, $a2, $a3\n")]
+    )
+
+    assert len(program.text_words) == 1
+    assert program.source_map[program.entry].rendered == "add $a1, $a2, $a3"
+
+
+def test_add_immediate_overload_obeys_reserved_at_and_macro_controls() -> None:
+    with pytest.raises(AssemblyError) as noat:
+        assemble(
+            [
+                SourceUnit(
+                    "add-noat.s",
+                    ".set noat\n.text\nmain: add $a1, $a2, 1\n",
+                )
+            ]
+        )
+    assert noat.value.code == "A241"
+
+    with pytest.raises(AssemblyError) as collision:
+        assemble(
+            [SourceUnit("add-at.s", ".text\nmain: add $a1, $at, 0x10000\n")]
+        )
+    assert collision.value.code == "A230"
+
+    with pytest.raises(AssemblyError) as nomacro:
+        assemble(
+            [
+                SourceUnit(
+                    "add-nomacro.s",
+                    ".set nomacro\n.text\nmain: add $a1, $a2, 1\n",
+                )
+            ]
+        )
+    assert nomacro.value.code == "A240"
+
+
 def test_division_result_pseudos_accept_small_and_full_width_immediate_divisors() -> None:
     machine = _run(
         ".eqv FULL_WIDTH, 0x10000\n"

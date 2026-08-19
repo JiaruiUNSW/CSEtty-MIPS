@@ -137,6 +137,11 @@ Supported pseudo-instructions and course overloads:
 
 ```text
 nop move clear not neg negu li la
+two-operand/self and one-immediate overloads for integer arithmetic/logical/compare
+two-operand immediate forms for addi addiu andi ori xori slti sltiu
+one-operand self forms for abs neg negu not clz clo seb seh
+immediate-source forms for mult multu div divu tge tgeu tlt tltu teq tne mthi mtlo
+two-operand/self and immediate-source forms for integer shifts
 b bal beq-immediate bne-immediate beqz bnez
 blt ble bgt bge bltu bleu bgtu bgeu
 seq sne sge sgt sle sgeu sgtu sleu
@@ -146,8 +151,29 @@ push pop begin end tgt tgtu tgti tgtiu tle tleu tlei tleiu
 symbolic and full-width memory-address forms
 ```
 
-The divisor in the three-operand `div`, `divu`, `rem`, and `remu` forms may be
-a register or a 32-bit immediate expression.
+For `add`, `addu`, `sub`, `subu`, `and`, `or`, `xor`, `nor`, `slt`, `sltu`, and
+`mul`, either source may be one 32-bit immediate expression. A two-operand form
+uses the destination as the left source. At most one source may be immediate;
+it is materialized through `$at`, preserving the selected real instruction's
+overflow and wrapping semantics.
+
+The same single-immediate rule applies to the two-source `mult`, `multu`,
+`div`, `divu`, `tge`, `tgeu`, `tlt`, `tltu`, `teq`, and `tne` forms. `mthi` and
+`mtlo` accept an immediate source. `addi`, `addiu`, `andi`, `ori`, `xori`,
+`slti`, and `sltiu` accept `op $d, immediate` as `op $d, $d, immediate`.
+
+Integer shifts accept two-operand self forms. `sll`, `srl`, `sra`, `sllv`,
+`srlv`, `srav`, and `rotrv` also accept one immediate value source. `clz`,
+`clo`, `seb`, and `seh` accept one-operand self forms. `abs`, `neg`, `negu`, and
+`not` accept one-operand self forms, and `not` additionally accepts an immediate
+source.
+
+Either compared value in `beq`, `bne`, the relational branch family, or the
+relational set family may be the single immediate source. The dividend or
+divisor in three-operand `div`, `divu`, `rem`, and `remu` may likewise be the
+single immediate. Two-operand `rem`/`remu` and `rol`/`ror` use the destination as
+the first source. All expansions honor `.set noat`, `.set nomacro`, and `$at`
+input-collision checks.
 
 Assembler passes assign all four sections, expand pseudos deterministically,
 resolve local/global symbols and expressions, emit data plus real instruction

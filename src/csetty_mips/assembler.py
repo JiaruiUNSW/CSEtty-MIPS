@@ -128,6 +128,18 @@ _PSEUDO_INSTRUCTIONS = frozenset(
     }
 )
 
+_BINARY_VALUE_OVERLOADS = frozenset({*R3_FUNCTS, "mul"})
+_PAIR_VALUE_OVERLOADS = frozenset({"mult", "multu", "div", "divu", *TRAP_R_FUNCTS})
+_SINGLE_VALUE_OVERLOADS = frozenset({"mthi", "mtlo"})
+_SELF_IMMEDIATE_OVERLOADS = frozenset({*I_SIGNED_OPCODES, *I_UNSIGNED_OPCODES})
+_SHIFT_SELF_OVERLOADS = frozenset(
+    {*SHIFT_IMMEDIATE_FUNCTS, *SHIFT_VARIABLE_FUNCTS, "rotr", "rotrv"}
+)
+_SHIFT_SOURCE_IMMEDIATE_OVERLOADS = frozenset(
+    {*SHIFT_IMMEDIATE_FUNCTS, *SHIFT_VARIABLE_FUNCTS, "rotrv"}
+)
+_SELF_SOURCE_OVERLOADS = frozenset({"clz", "clo", "seb", "seh"})
+
 
 @dataclass(frozen=True, slots=True)
 class _LocatedStatement:
@@ -160,6 +172,23 @@ def _load_word_count(expression: str, source: SourceRef) -> int:
     return 2
 
 
+def _one_value_word_count(
+    operation: str,
+    values: Sequence[str],
+    *,
+    base_words: int,
+    source: SourceRef,
+) -> int:
+    immediates = [value for value in values if not _looks_like_register(value)]
+    if len(immediates) > 1:
+        raise AssemblyError(
+            "A242",
+            f"{operation} supports at most one immediate source operand",
+            source,
+        )
+    return base_words + (_load_word_count(immediates[0], source) if immediates else 0)
+
+
 def _memory_parts(operand: str) -> tuple[str, str | None]:
     match = _MEMORY_OPERAND.fullmatch(operand.strip())
     if match is None:
@@ -182,14 +211,27 @@ def _memory_word_count(statement: ParsedStatement) -> int:
 def _uses_macro(statement: ParsedStatement, words: int) -> bool:
     operation = statement.operation
     assert operation is not None
+    operands = statement.operands
+    if operation in _BINARY_VALUE_OVERLOADS:
+        _, left, right = _binary_operands(operation, operands, statement.source)
+        return len(operands) == 2 or not all(map(_looks_like_register, (left, right)))
+    if operation in _PAIR_VALUE_OVERLOADS and len(operands) == 2:
+        return not all(map(_looks_like_register, operands))
+    if operation in _SINGLE_VALUE_OVERLOADS and len(operands) == 1:
+        return not _looks_like_register(operands[0])
+    if operation in _SELF_IMMEDIATE_OVERLOADS and len(operands) == 2:
+        return True
+    if operation in _SHIFT_SELF_OVERLOADS and len(operands) in {2, 3}:
+        _, value, _ = _shift_operands(operation, operands, statement.source)
+        return len(operands) == 2 or not _looks_like_register(value)
+    if operation in _SELF_SOURCE_OVERLOADS and len(operands) == 1:
+        return True
     if operation in MEMORY_OPCODES or operation in FPU_MEMORY_OPCODES:
         _, base = _memory_parts(statement.operands[1])
         return base is None or words != 1
     if operation in {"beq", "bne"}:
-        return not _looks_like_register(statement.operands[1])
-    if operation == "mul":
-        return not _looks_like_register(statement.operands[2])
-    if operation in {"div", "divu"} and len(statement.operands) == 3:
+        return not all(map(_looks_like_register, operands[:2]))
+    if operation in {"div", "divu"} and len(operands) == 3:
         return True
     return operation in _PSEUDO_INSTRUCTIONS
 
@@ -197,14 +239,26 @@ def _uses_macro(statement: ParsedStatement, words: int) -> bool:
 def _uses_assembler_temporary(statement: ParsedStatement, words: int) -> bool:
     operation = statement.operation
     assert operation is not None
+    operands = statement.operands
+    if operation in _BINARY_VALUE_OVERLOADS:
+        _, left, right = _binary_operands(operation, operands, statement.source)
+        return not all(map(_looks_like_register, (left, right)))
+    if operation in _PAIR_VALUE_OVERLOADS and len(operands) == 2:
+        return not all(map(_looks_like_register, operands))
+    if operation in _SINGLE_VALUE_OVERLOADS and len(operands) == 1:
+        return not _looks_like_register(operands[0])
+    if operation in _SHIFT_SELF_OVERLOADS and len(operands) in {2, 3}:
+        _, value, _ = _shift_operands(operation, operands, statement.source)
+        return not _looks_like_register(value)
     if operation in MEMORY_OPCODES or operation in FPU_MEMORY_OPCODES:
         return words != 1
-    if operation == "mul":
-        return not _looks_like_register(statement.operands[2])
-    if operation in {"div", "divu", "rem", "remu"} and len(statement.operands) == 3:
-        return not _looks_like_register(statement.operands[2])
+    if operation in {"div", "divu"} and len(operands) == 3:
+        return not all(map(_looks_like_register, operands[1:3]))
+    if operation in {"rem", "remu"}:
+        _, left, right = _binary_operands(operation, operands, statement.source)
+        return not all(map(_looks_like_register, (left, right)))
     if operation in {"beq", "bne"}:
-        return not _looks_like_register(statement.operands[1])
+        return not all(map(_looks_like_register, operands[:2]))
     if operation in {"blt", "ble", "bgt", "bge", "bltu", "bleu", "bgtu", "bgeu"}:
         return True
     if operation in {"seq", "sne"}:
@@ -227,9 +281,15 @@ def _uses_assembler_temporary(statement: ParsedStatement, words: int) -> bool:
         "sgtui",
         "sleui",
     }:
-        return not _looks_like_register(statement.operands[2]) or operation.endswith("i")
-    if operation == "rol":
-        return _looks_like_register(statement.operands[2])
+        return (
+            not all(map(_looks_like_register, operands[1:3])) or operation.endswith("i")
+        )
+    if operation == "not":
+        _, value = _self_source_operands(operation, operands, statement.source)
+        return not _looks_like_register(value)
+    if operation in {"rol", "ror"}:
+        _, _, amount = _shift_operands(operation, operands, statement.source)
+        return operation == "rol" and _looks_like_register(amount)
     return operation in {"tgti", "tgtiu", "tlei", "tleiu"}
 
 
@@ -248,6 +308,33 @@ def _operand_count(
         f"{operation} expects {rendered} operand(s), got {len(operands)}",
         source,
     )
+
+
+def _binary_operands(
+    operation: str, operands: Sequence[str], source: SourceRef
+) -> tuple[str, str, str]:
+    _operand_count(operation, operands, (2, 3), source)
+    if len(operands) == 2:
+        return operands[0], operands[0], operands[1]
+    return operands[0], operands[1], operands[2]
+
+
+def _self_source_operands(
+    operation: str, operands: Sequence[str], source: SourceRef
+) -> tuple[str, str]:
+    _operand_count(operation, operands, (1, 2), source)
+    if len(operands) == 1:
+        return operands[0], operands[0]
+    return operands[0], operands[1]
+
+
+def _shift_operands(
+    operation: str, operands: Sequence[str], source: SourceRef
+) -> tuple[str, str, str]:
+    _operand_count(operation, operands, (2, 3), source)
+    if len(operands) == 2:
+        return operands[0], operands[0], operands[1]
+    return operands[0], operands[1], operands[2]
 
 
 def _decode_string(text: str, source: SourceRef) -> bytes:
@@ -281,32 +368,36 @@ def _pseudo_word_count(statement: ParsedStatement) -> int:
         return 2
     if operation in {"beq", "bne"}:
         _operand_count(operation, operands, 3, statement.source)
-        return (
-            1
-            if _looks_like_register(operands[1])
-            else _load_word_count(operands[1], statement.source) + 1
+        return _one_value_word_count(
+            operation,
+            operands[:2],
+            base_words=1,
+            source=statement.source,
         )
     if operation == "mul":
-        _operand_count(operation, operands, 3, statement.source)
-        return (
-            1
-            if _looks_like_register(operands[2])
-            else _load_word_count(operands[2], statement.source) + 1
+        _, left, right = _binary_operands(operation, operands, statement.source)
+        return _one_value_word_count(
+            operation,
+            (left, right),
+            base_words=1,
+            source=statement.source,
         )
     if operation in {"blt", "ble", "bgt", "bge", "bltu", "bleu", "bgtu", "bgeu"}:
         _operand_count(operation, operands, 3, statement.source)
-        return (
-            2
-            if _looks_like_register(operands[1])
-            else _load_word_count(operands[1], statement.source) + 2
+        return _one_value_word_count(
+            operation,
+            operands[:2],
+            base_words=2,
+            source=statement.source,
         )
     if operation in {"seq", "sne", "sge", "sle", "sgeu", "sleu", "sgt", "sgtu"}:
         _operand_count(operation, operands, 3, statement.source)
         remaining = 1 if operation in {"sgt", "sgtu"} else 2
-        return (
-            remaining
-            if _looks_like_register(operands[2])
-            else _load_word_count(operands[2], statement.source) + remaining
+        return _one_value_word_count(
+            operation,
+            operands[1:3],
+            base_words=remaining,
+            source=statement.source,
         )
     immediate_sets = {
         "seqi",
@@ -324,19 +415,30 @@ def _pseudo_word_count(statement: ParsedStatement) -> int:
         _operand_count(operation, operands, 3, statement.source)
         remaining = 1 if operation in {"sgti", "sgtui"} else 2
         return _load_word_count(operands[2], statement.source) + remaining
+    if operation in {"neg", "negu", "not"}:
+        _, value = _self_source_operands(operation, operands, statement.source)
+        if operation == "not":
+            return _one_value_word_count(
+                operation,
+                (value,),
+                base_words=1,
+                source=statement.source,
+            )
+        return 1
     if operation == "abs":
-        _operand_count(operation, operands, 2, statement.source)
+        _self_source_operands(operation, operands, statement.source)
         return 3
     if operation in {"rem", "remu"}:
-        _operand_count(operation, operands, 3, statement.source)
-        return (
-            2
-            if _looks_like_register(operands[2])
-            else _load_word_count(operands[2], statement.source) + 2
+        _, left, right = _binary_operands(operation, operands, statement.source)
+        return _one_value_word_count(
+            operation,
+            (left, right),
+            base_words=2,
+            source=statement.source,
         )
     if operation in {"rol", "ror"}:
-        _operand_count(operation, operands, 3, statement.source)
-        if not _looks_like_register(operands[2]):
+        _, _, amount = _shift_operands(operation, operands, statement.source)
+        if not _looks_like_register(amount):
             return 1
         return 1 if operation == "ror" else 2
     if operation in {"push", "pop"}:
@@ -358,9 +460,6 @@ def _pseudo_word_count(statement: ParsedStatement) -> int:
         "nop": 0,
         "move": 2,
         "clear": 1,
-        "not": 2,
-        "neg": 2,
-        "negu": 2,
         "b": 1,
         "bal": 1,
         "beqz": 2,
@@ -373,14 +472,51 @@ def _pseudo_word_count(statement: ParsedStatement) -> int:
 def _instruction_word_count(statement: ParsedStatement) -> int:
     operation = statement.operation
     assert operation is not None
+    operands = statement.operands
     if operation in _PSEUDO_INSTRUCTIONS:
         return _pseudo_word_count(statement)
-    if operation in {"div", "divu"} and len(statement.operands) == 3:
-        return (
-            2
-            if _looks_like_register(statement.operands[2])
-            else _load_word_count(statement.operands[2], statement.source) + 2
+    if operation in _BINARY_VALUE_OVERLOADS and len(operands) in {2, 3}:
+        _, left, right = _binary_operands(operation, operands, statement.source)
+        if len(operands) == 2 or not all(map(_looks_like_register, (left, right))):
+            return _one_value_word_count(
+                operation,
+                (left, right),
+                base_words=1,
+                source=statement.source,
+            )
+    if operation in {"div", "divu"} and len(operands) == 3:
+        return _one_value_word_count(
+            operation,
+            operands[1:3],
+            base_words=2,
+            source=statement.source,
         )
+    if operation in _PAIR_VALUE_OVERLOADS and len(operands) == 2:
+        return _one_value_word_count(
+            operation,
+            operands,
+            base_words=1,
+            source=statement.source,
+        )
+    if operation in _SINGLE_VALUE_OVERLOADS and len(operands) == 1:
+        return _one_value_word_count(
+            operation,
+            operands,
+            base_words=1,
+            source=statement.source,
+        )
+    if operation in _SELF_IMMEDIATE_OVERLOADS and len(operands) == 2:
+        return 1
+    if operation in _SHIFT_SELF_OVERLOADS and len(operands) in {2, 3}:
+        _, value, _ = _shift_operands(operation, operands, statement.source)
+        if len(operands) == 2:
+            return 1
+        if operation in _SHIFT_SOURCE_IMMEDIATE_OVERLOADS and not _looks_like_register(
+            value
+        ):
+            return _load_word_count(value, statement.source) + 1
+    if operation in _SELF_SOURCE_OVERLOADS and len(operands) == 1:
+        return 1
     if operation in ALL_REAL_INSTRUCTIONS:
         return 1
     inventory = sorted(ALL_REAL_INSTRUCTIONS | _PSEUDO_INSTRUCTIONS)
@@ -718,6 +854,104 @@ def _expand_load(
     ]
 
 
+def _materialize_one_value(
+    operation: str,
+    values: Sequence[str],
+    *,
+    symbols: Mapping[str, int],
+    source: SourceRef,
+    expected_words: int,
+) -> tuple[list[tuple[str, tuple[str, ...]]], tuple[str, ...]]:
+    immediate_indices = [
+        index for index, value in enumerate(values) if not _looks_like_register(value)
+    ]
+    if len(immediate_indices) > 1:
+        raise AssemblyError(
+            "A242",
+            f"{operation} supports at most one immediate source operand",
+            source,
+        )
+    if not immediate_indices:
+        if expected_words != 0:
+            raise AssertionError(f"unexpected load expansion size {expected_words}")
+        return [], tuple(values)
+    immediate_index = immediate_indices[0]
+    for index, value in enumerate(values):
+        if index != immediate_index and parse_register(value, source) == 1:
+            raise AssemblyError(
+                "A230",
+                "$at cannot be an input when an immediate needs expansion",
+                source,
+            )
+    loaded = _expand_load(
+        "$at",
+        values[immediate_index],
+        symbols=symbols,
+        source=source,
+        expected_words=expected_words,
+    )
+    selected = list(values)
+    selected[immediate_index] = "$at"
+    return loaded, tuple(selected)
+
+
+def _expand_binary_value(
+    operation: str,
+    operands: Sequence[str],
+    *,
+    symbols: Mapping[str, int],
+    source: SourceRef,
+    expected_words: int,
+) -> list[tuple[str, tuple[str, ...]]]:
+    destination, left, right = _binary_operands(operation, operands, source)
+    loaded, selected = _materialize_one_value(
+        operation,
+        (left, right),
+        symbols=symbols,
+        source=source,
+        expected_words=expected_words - 1,
+    )
+    return [*loaded, (operation, (destination, *selected))]
+
+
+def _expand_pair_value(
+    operation: str,
+    operands: Sequence[str],
+    *,
+    symbols: Mapping[str, int],
+    source: SourceRef,
+    expected_words: int,
+) -> list[tuple[str, tuple[str, ...]]]:
+    _operand_count(operation, operands, 2, source)
+    loaded, selected = _materialize_one_value(
+        operation,
+        operands,
+        symbols=symbols,
+        source=source,
+        expected_words=expected_words - 1,
+    )
+    return [*loaded, (operation, selected)]
+
+
+def _expand_single_value(
+    operation: str,
+    operands: Sequence[str],
+    *,
+    symbols: Mapping[str, int],
+    source: SourceRef,
+    expected_words: int,
+) -> list[tuple[str, tuple[str, ...]]]:
+    _operand_count(operation, operands, 1, source)
+    loaded, selected = _materialize_one_value(
+        operation,
+        operands,
+        symbols=symbols,
+        source=source,
+        expected_words=expected_words - 1,
+    )
+    return [*loaded, (operation, selected)]
+
+
 def _expand_division_result(
     operation: str,
     operands: Sequence[str],
@@ -727,29 +961,51 @@ def _expand_division_result(
     source: SourceRef,
     expected_words: int,
 ) -> list[tuple[str, tuple[str, ...]]]:
-    divisor = operands[2]
+    destination, left, right = _binary_operands(operation, operands, source)
+    loaded, selected = _materialize_one_value(
+        operation,
+        (left, right),
+        symbols=symbols,
+        source=source,
+        expected_words=expected_words - 2,
+    )
+    return [
+        *loaded,
+        (operation, selected),
+        (result_instruction, (destination,)),
+    ]
+
+
+def _expand_shift_overload(
+    operation: str,
+    operands: Sequence[str],
+    *,
+    symbols: Mapping[str, int],
+    source: SourceRef,
+    expected_words: int,
+) -> list[tuple[str, tuple[str, ...]]]:
+    destination, value, control = _shift_operands(operation, operands, source)
     loaded: list[tuple[str, tuple[str, ...]]] = []
-    selected_divisor = divisor
-    if not _looks_like_register(divisor):
-        if parse_register(operands[1], source) == 1:
+    if not _looks_like_register(value):
+        if operation not in _SHIFT_SOURCE_IMMEDIATE_OVERLOADS:
+            parse_register(value, source)
+        if (
+            operation in SHIFT_VARIABLE_FUNCTS or operation == "rotrv"
+        ) and parse_register(control, source) == 1:
             raise AssemblyError(
                 "A230",
-                "$at cannot be the dividend when an immediate divisor needs expansion",
+                "$at cannot control a shift when its value needs expansion",
                 source,
             )
         loaded = _expand_load(
             "$at",
-            divisor,
+            value,
             symbols=symbols,
             source=source,
-            expected_words=expected_words - 2,
+            expected_words=expected_words - 1,
         )
-        selected_divisor = "$at"
-    return [
-        *loaded,
-        (operation, (operands[1], selected_divisor)),
-        (result_instruction, (operands[0],)),
-    ]
+        value = "$at"
+    return [*loaded, (operation, (destination, value, control))]
 
 
 def _expand_pseudo(
@@ -768,9 +1024,20 @@ def _expand_pseudo(
     if operation == "clear":
         return [("addu", (operands[0], "$zero", "$zero"))]
     if operation == "not":
-        return [("nor", (operands[0], operands[1], "$zero"))]
+        destination, not_value = _self_source_operands(operation, operands, source)
+        loaded, not_selected = _materialize_one_value(
+            operation,
+            (not_value,),
+            symbols=symbols,
+            source=source,
+            expected_words=expected_words - 1,
+        )
+        return [*loaded, ("nor", (destination, "$zero", not_selected[0]))]
     if operation in {"neg", "negu"}:
-        return [("sub" if operation == "neg" else "subu", (operands[0], "$zero", operands[1]))]
+        destination, value = _self_source_operands(operation, operands, source)
+        return [
+            ("sub" if operation == "neg" else "subu", (destination, "$zero", value))
+        ]
     if operation == "li":
         return _expand_load(
             operands[0],
@@ -780,32 +1047,25 @@ def _expand_pseudo(
             expected_words=expected_words,
         )
     if operation == "la":
-        value = u32(evaluate(operands[1], symbols, source))
+        address_value = u32(evaluate(operands[1], symbols, source))
         return [
-            ("lui", (operands[0], str((value >> 16) & 0xFFFF))),
-            ("ori", (operands[0], operands[0], str(value & 0xFFFF))),
+            ("lui", (operands[0], str((address_value >> 16) & 0xFFFF))),
+            ("ori", (operands[0], operands[0], str(address_value & 0xFFFF))),
         ]
     if operation == "mul":
-        if _looks_like_register(operands[2]):
-            return [("mul", tuple(operands))]
-        if parse_register(operands[1], source) == 1:
-            raise AssemblyError(
-                "A230", "$at cannot be an input when an immediate needs expansion", source
-            )
-        loaded = _expand_load(
-            "$at",
-            operands[2],
+        return _expand_binary_value(
+            operation,
+            operands,
             symbols=symbols,
             source=source,
-            expected_words=expected_words - 1,
+            expected_words=expected_words,
         )
-        return [*loaded, ("mul", (operands[0], operands[1], "$at"))]
     if operation in MEMORY_OPCODES or operation in FPU_MEMORY_OPCODES:
         expression, base = _memory_parts(operands[1])
-        value = evaluate(expression, symbols, source)
+        memory_value = evaluate(expression, symbols, source)
         if expected_words == 1:
             selected_base = "$zero" if base is None else base
-            return [(operation, (operands[0], f"{value}({selected_base})"))]
+            return [(operation, (operands[0], f"{memory_value}({selected_base})"))]
         stores = {"sb", "sh", "sw", "swl", "swr", "sc"}
         base_is_at = base is not None and parse_register(base, source) == 1
         value_is_at = operation in stores and parse_register(operands[0], source) == 1
@@ -835,55 +1095,38 @@ def _expand_pseudo(
     if operation == "bal":
         return [("bgezal", ("$zero", operands[0]))]
     if operation in {"beq", "bne"}:
-        if _looks_like_register(operands[1]):
-            return [(operation, tuple(operands))]
-        if parse_register(operands[0], source) == 1:
-            raise AssemblyError(
-                "A230", "$at cannot be compared when an immediate needs expansion", source
-            )
-        loaded = _expand_load(
-            "$at",
-            operands[1],
+        loaded, selected = _materialize_one_value(
+            operation,
+            operands[:2],
             symbols=symbols,
             source=source,
             expected_words=expected_words - 1,
         )
-        return [*loaded, (operation, (operands[0], "$at", operands[2]))]
+        return [*loaded, (operation, (*selected, operands[2]))]
     if operation == "beqz":
         return [("beq", (operands[0], "$zero", operands[1]))]
     if operation == "bnez":
         return [("bne", (operands[0], "$zero", operands[1]))]
     relational_branches = {"blt", "bge", "bgt", "ble", "bltu", "bgeu", "bgtu", "bleu"}
     if operation in relational_branches:
+        branch_loaded, (source_left, source_right) = _materialize_one_value(
+            operation,
+            operands[:2],
+            symbols=symbols,
+            source=source,
+            expected_words=expected_words - 2,
+        )
         branch_relations = {
-            "blt": ("slt", operands[0], operands[1], "bne"),
-            "bge": ("slt", operands[0], operands[1], "beq"),
-            "bgt": ("slt", operands[1], operands[0], "bne"),
-            "ble": ("slt", operands[1], operands[0], "beq"),
-            "bltu": ("sltu", operands[0], operands[1], "bne"),
-            "bgeu": ("sltu", operands[0], operands[1], "beq"),
-            "bgtu": ("sltu", operands[1], operands[0], "bne"),
-            "bleu": ("sltu", operands[1], operands[0], "beq"),
+            "blt": ("slt", source_left, source_right, "bne"),
+            "bge": ("slt", source_left, source_right, "beq"),
+            "bgt": ("slt", source_right, source_left, "bne"),
+            "ble": ("slt", source_right, source_left, "beq"),
+            "bltu": ("sltu", source_left, source_right, "bne"),
+            "bgeu": ("sltu", source_left, source_right, "beq"),
+            "bgtu": ("sltu", source_right, source_left, "bne"),
+            "bleu": ("sltu", source_right, source_left, "beq"),
         }
         compare, left, right, branch = branch_relations[operation]
-        if _looks_like_register(operands[1]):
-            branch_loaded: list[tuple[str, tuple[str, ...]]] = []
-        else:
-            if parse_register(operands[0], source) == 1:
-                raise AssemblyError(
-                    "A230", "$at cannot be compared when an immediate needs expansion", source
-                )
-            branch_loaded = _expand_load(
-                "$at",
-                operands[1],
-                symbols=symbols,
-                source=source,
-                expected_words=expected_words - 2,
-            )
-            if operation in {"blt", "bge", "bltu", "bgeu"}:
-                left, right = operands[0], "$at"
-            else:
-                left, right = "$at", operands[0]
         return [
             *branch_loaded,
             (compare, ("$at", left, right)),
@@ -905,23 +1148,14 @@ def _expand_pseudo(
     set_operation = immediate_set_aliases.get(operation, operation)
     set_operations = {"seq", "sne", "sge", "sgt", "sle", "sgeu", "sgtu", "sleu"}
     if set_operation in set_operations:
-        immediate = operation in immediate_set_aliases or not _looks_like_register(operands[2])
-        set_loaded: list[tuple[str, tuple[str, ...]]] = []
-        right = operands[2]
         remaining = 1 if set_operation in {"sgt", "sgtu"} else 2
-        if immediate:
-            if parse_register(operands[1], source) == 1:
-                raise AssemblyError(
-                    "A230", "$at cannot be an input when an immediate needs expansion", source
-                )
-            set_loaded = _expand_load(
-                "$at",
-                operands[2],
-                symbols=symbols,
-                source=source,
-                expected_words=expected_words - remaining,
-            )
-            right = "$at"
+        set_loaded, (left, right) = _materialize_one_value(
+            operation,
+            operands[1:3],
+            symbols=symbols,
+            source=source,
+            expected_words=expected_words - remaining,
+        )
         if set_operation in {"seq", "sne"}:
             finish = "sltiu" if set_operation == "seq" else "sltu"
             final_operands = (
@@ -931,26 +1165,27 @@ def _expand_pseudo(
             )
             return [
                 *set_loaded,
-                ("xor", ("$at", operands[1], right)),
+                ("xor", ("$at", left, right)),
                 (finish, final_operands),
             ]
         unsigned = set_operation.endswith("u")
         compare = "sltu" if unsigned else "slt"
         if set_operation in {"sgt", "sgtu"}:
-            return [*set_loaded, (compare, (operands[0], right, operands[1]))]
+            return [*set_loaded, (compare, (operands[0], right, left))]
         reverse = set_operation.startswith("sle")
-        left = right if reverse else operands[1]
-        compare_right = operands[1] if reverse else right
+        compare_left = right if reverse else left
+        compare_right = left if reverse else right
         return [
             *set_loaded,
-            (compare, (operands[0], left, compare_right)),
+            (compare, (operands[0], compare_left, compare_right)),
             ("xori", (operands[0], operands[0], "1")),
         ]
     if operation == "abs":
+        destination, value = _self_source_operands(operation, operands, source)
         return [
-            ("addu", (operands[0], operands[1], "$zero")),
-            ("bgez", (operands[1], str(address + 12))),
-            ("sub", (operands[0], "$zero", operands[1])),
+            ("addu", (destination, value, "$zero")),
+            ("bgez", (value, str(address + 12))),
+            ("sub", (destination, "$zero", value)),
         ]
     if operation in {"rem", "remu"}:
         divide = "divu" if operation == "remu" else "div"
@@ -963,22 +1198,23 @@ def _expand_pseudo(
             expected_words=expected_words,
         )
     if operation in {"rol", "ror"}:
-        if _looks_like_register(operands[2]):
+        destination, value, amount_operand = _shift_operands(operation, operands, source)
+        if _looks_like_register(amount_operand):
             if operation == "ror":
-                return [("rotrv", (operands[0], operands[1], operands[2]))]
-            if parse_register(operands[1], source) == 1:
+                return [("rotrv", (destination, value, amount_operand))]
+            if parse_register(value, source) == 1:
                 raise AssemblyError(
                     "A230", "$at cannot hold the rotate input when a temporary is needed", source
                 )
             return [
-                ("subu", ("$at", "$zero", operands[2])),
-                ("rotrv", (operands[0], operands[1], "$at")),
+                ("subu", ("$at", "$zero", amount_operand)),
+                ("rotrv", (destination, value, "$at")),
             ]
-        amount = evaluate(operands[2], symbols, source)
+        amount = evaluate(amount_operand, symbols, source)
         if not 0 <= amount <= 31:
             raise AssemblyError("A219", "rotate amount must be between 0 and 31", source)
-        selected = (-amount) & 31 if operation == "rol" else amount
-        return [("rotr", (operands[0], operands[1], str(selected)))]
+        selected_amount = (-amount) & 31 if operation == "rol" else amount
+        return [("rotr", (destination, value, str(selected_amount)))]
     if operation == "push":
         return [
             ("addiu", ("$sp", "$sp", "-4")),
@@ -1391,6 +1627,14 @@ def assemble(
                 source=statement.source,
                 expected_words=item.size // 4,
             )
+        elif operation in _BINARY_VALUE_OVERLOADS and len(statement.operands) in {2, 3}:
+            expanded = _expand_binary_value(
+                operation,
+                statement.operands,
+                symbols=visible_symbols,
+                source=statement.source,
+                expected_words=item.size // 4,
+            )
         elif operation in {"div", "divu"} and len(statement.operands) == 3:
             expanded = _expand_division_result(
                 operation,
@@ -1400,6 +1644,39 @@ def assemble(
                 source=statement.source,
                 expected_words=item.size // 4,
             )
+        elif operation in _PAIR_VALUE_OVERLOADS and len(statement.operands) == 2:
+            expanded = _expand_pair_value(
+                operation,
+                statement.operands,
+                symbols=visible_symbols,
+                source=statement.source,
+                expected_words=item.size // 4,
+            )
+        elif operation in _SINGLE_VALUE_OVERLOADS and len(statement.operands) == 1:
+            expanded = _expand_single_value(
+                operation,
+                statement.operands,
+                symbols=visible_symbols,
+                source=statement.source,
+                expected_words=item.size // 4,
+            )
+        elif operation in _SELF_IMMEDIATE_OVERLOADS and len(statement.operands) == 2:
+            expanded = [
+                (
+                    operation,
+                    (statement.operands[0], statement.operands[0], statement.operands[1]),
+                )
+            ]
+        elif operation in _SHIFT_SELF_OVERLOADS and len(statement.operands) in {2, 3}:
+            expanded = _expand_shift_overload(
+                operation,
+                statement.operands,
+                symbols=visible_symbols,
+                source=statement.source,
+                expected_words=item.size // 4,
+            )
+        elif operation in _SELF_SOURCE_OVERLOADS and len(statement.operands) == 1:
+            expanded = [(operation, (statement.operands[0], statement.operands[0]))]
         else:
             expanded = [(operation, statement.operands)]
         if len(expanded) * 4 != item.size:

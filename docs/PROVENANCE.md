@@ -25,6 +25,7 @@ Those public claims are a compatibility target, not an implementation source.
 |---|---|
 | [Public mipsy project page](https://github.com/insou22/mipsy) | Product-level feature/non-goal inventory and licensing decision only |
 | [COMP1521 26T2 public MIPS guide](https://cgi.cse.unsw.edu.au/~cs1521/26T2/resources/mips-guide.html) | Public instruction, pseudo, directive, memory, expression, and syscall contract |
+| [Public COMP1521 mipsy web](https://cgi.cse.unsw.edu.au/~cs1521/mipsy/) | Black-box accept/reject and execution comparison for locally authored operand-overload probes only; no JavaScript, WebAssembly, source, diagnostics, or assets inspected or copied |
 | [MIPS32 Instruction Set, revision 5.04](https://cgi.cse.unsw.edu.au/~cs1521/26T2/resources/MIPS32-II-r5.04.pdf) | Architectural encodings and integer operation semantics |
 | Independently installed SPIM 8.0 executable | Optional black-box input/output comparison for overlapping behavior only |
 | Original CSEExamTTY MIPS programs and expected output | Independent end-to-end acceptance corpus |
@@ -42,8 +43,8 @@ text and diagrams are not copied. SPIM source is not consulted or incorporated.
   including earlier student implementations.
 - Copied fixtures, reference solutions, or diagnostics from university
   infrastructure.
-- Reverse engineering of a private or term-specific binary to reproduce
-  undocumented details.
+- Reverse engineering a private or term-specific binary, or inspecting public
+  web application code/assets, to reproduce implementation details.
 
 ## Independent design ledger
 
@@ -76,6 +77,25 @@ This comparison happened after implementation, introduced no upstream fixture,
 table, diagnostic string, or asset, and is not an automated dependency or a
 persistent regression corpus. The independent local expected outputs remain the
 authoritative tests.
+
+## Public operand-overload interoperability audit
+
+On 2026-08-19, after a user program exposed the unsupported form
+`add $a1, $a2, 1`, the public COMP1521 mipsy web UI was exercised strictly as a
+black box. A locally authored matrix submitted 330 unique candidate integer
+operand forms; 152 assembled successfully. Only accept/reject status and the
+architectural instructions displayed for a small representative subset were
+observed. The page's JavaScript, WebAssembly, source maps, network internals,
+diagnostic strings, and assets were not inspected or retained.
+
+The resulting implementation is category-based rather than a copied table:
+single-immediate source materialization, two-operand self forms, unary self
+forms, and symmetric branch/set comparisons. Tests in
+`tests/test_csetty_mips_overloads.py` are independently authored and verify
+architectural semantics plus local `$at`, `.set noat`, and `.set nomacro`
+safety. Three-operand `divu` with one immediate is deliberately accepted in
+either source position even though the audited public UI rejected both forms;
+exact byte-for-byte or bug compatibility is not claimed.
 
 ## Distribution record
 
