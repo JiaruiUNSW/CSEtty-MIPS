@@ -8,7 +8,7 @@ Python package.
 This project is not a fork, port, or redistribution of `insou22/mipsy`. It
 contains no upstream mipsy source, binary, tests, generated files, or copied
 diagnostic text. The
-[provenance record](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.2/docs/PROVENANCE.md)
+[provenance record](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/docs/PROVENANCE.md)
 documents the clean-room boundary and public architectural references.
 
 The project is not made, managed, endorsed, or authenticated by UNSW or the
@@ -19,7 +19,7 @@ UNSW School of Computer Science and Engineering.
 Python 3.11 or newer is required.
 
 ```sh
-python3 -m pip install csetty-mips==0.1.2
+python3 -m pip install csetty-mips==0.1.3
 ```
 
 For an editable development checkout:
@@ -59,9 +59,9 @@ assert machine.io.output == b"42"
 
 The supported instruction, directive, syscall, debugger, filesystem, and
 resource-limit contracts are documented in the
-[specification](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.2/docs/SPEC.md).
+[specification](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/docs/SPEC.md).
 The
-[acceptance matrix](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.2/docs/ACCEPTANCE_MATRIX.md)
+[acceptance matrix](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/docs/ACCEPTANCE_MATRIX.md)
 records executable coverage and deliberate non-goals.
 
 ## Verify
@@ -80,5 +80,5 @@ fixture; its absence causes one test to skip.
 
 The source code in this repository is licensed under the Mozilla Public
 License 2.0. See
-[LICENSE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.2/LICENSE) and
-[NOTICE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.2/NOTICE).
+[LICENSE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/LICENSE) and
+[NOTICE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/NOTICE).

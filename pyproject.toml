@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "csetty-mips"
-version = "0.1.2"
+version = "0.1.3"
 description = "An independent educational MIPS32 assembler, simulator, and debugger"
 readme = "README.md"
 license = "MPL-2.0"
