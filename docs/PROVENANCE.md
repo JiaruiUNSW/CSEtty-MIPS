@@ -25,7 +25,7 @@ Those public claims are a compatibility target, not an implementation source.
 |---|---|
 | [Public mipsy project page](https://github.com/insou22/mipsy) | Product-level feature/non-goal inventory and licensing decision only |
 | [COMP1521 26T2 public MIPS guide](https://cgi.cse.unsw.edu.au/~cs1521/26T2/resources/mips-guide.html) | Public instruction, pseudo, directive, memory, expression, and syscall contract |
-| [Public COMP1521 mipsy web](https://cgi.cse.unsw.edu.au/~cs1521/mipsy/) | Black-box accept/reject and execution comparison for locally authored operand-overload probes only; no JavaScript, WebAssembly, source, diagnostics, or assets inspected or copied |
+| [Public COMP1521 mipsy web](https://cgi.cse.unsw.edu.au/~cs1521/mipsy/) | Black-box accept/reject and execution comparison for locally authored operand-overload and alignment probes only; no JavaScript, WebAssembly, source, diagnostics, or assets used as implementation material |
 | [MIPS32 Instruction Set, revision 5.04](https://cgi.cse.unsw.edu.au/~cs1521/26T2/resources/MIPS32-II-r5.04.pdf) | Architectural encodings and integer operation semantics |
 | Independently installed SPIM 8.0 executable | Optional black-box input/output comparison for overlapping behavior only |
 | Original CSEExamTTY MIPS programs and expected output | Independent end-to-end acceptance corpus |
@@ -98,6 +98,14 @@ either source position even though the audited public UI rejected both forms;
 exact byte-for-byte or bug compatibility is not claimed.
 
 ## Distribution record
+
+The 2026-10-21 alignment fix was independently implemented as a section-local
+pending-label model. A locally authored 18-case program and four isolated probes
+compared relative addresses and successful execution with the public web UI.
+Only functional outputs and accept/reject status informed compatibility choices;
+no upstream implementation/assets or assignment source were copied into tests.
+See [the audit](ALIGNMENT_AUDIT_2026-10-21.md) for the scope and deliberate boundaries.
+The fix targets release `0.1.4`; its source distribution includes tests and docs.
 
 The `csetty_mips` modules contain no runtime dependency on, executable from, or
 vendored content belonging to mipsy. They are distributed under the repository

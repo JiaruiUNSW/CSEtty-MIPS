@@ -15,6 +15,11 @@ Current verification snapshot:
 - one-time post-implementation comparison on the original local corpus:
   92/92 expected exit/stdout cases matched the pinned private upstream runner.
 
+The `0.1.4` maintenance release additionally covers 75 original alignment
+regressions in `test_csetty_mips_alignment.py`. The baseline snapshot above
+describes the public `0.1.3` release; current local results are recorded in
+[the alignment audit](ALIGNMENT_AUDIT_2026-10-21.md).
+
 ## Product capabilities
 
 | Capability | Status | Evidence |
@@ -93,7 +98,7 @@ faulting atomicity, and all four offsets for unaligned word operations.
 | `.text .data .ktext .kdata` | verified | optional forward address, section limits, protected kernel ranges |
 | `.globl .global` | verified | explicit multi-file export |
 | `.eqv .equ` and `NAME = EXPR` | verified | source-scoped constants |
-| `.align .balign` | verified | power-of-two and range validation |
+| `.align .balign` | verified | pending-label/alias relocation, section/file boundaries, exported symbols, power-of-two and range validation |
 | `.ascii .asciiz` | verified | multiple escaped UTF-8 strings |
 | `.byte .half .word` | verified | range, endian, auto-alignment; `.word` also allowed in text |
 | `.float .double` | verified | little-endian IEEE data emission |

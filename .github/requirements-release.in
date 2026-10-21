@@ -1,0 +1,5 @@
+# Update the complete hashed lock in a reviewed PR; never resolve during release.
+build==1.6.1
+setuptools==84.2.1
+twine==7.0.0
+wheel==0.48.0

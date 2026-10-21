@@ -4,12 +4,13 @@ import io
 import os
 import subprocess
 import sys
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-from csetty_mips import SourceUnit, assemble
+from csetty_mips import SourceUnit, __version__, assemble
 from csetty_mips.cli import main
 from csetty_mips.debugger import Debugger
 from csetty_mips.disassembler import disassemble
@@ -280,7 +281,9 @@ def test_cli_move_label_step_limit_stdin_source_and_version(tmp_path: Path) -> N
         text=True,
     )
     assert version.returncode == 0
-    assert version.stdout.strip() == "csetty-mips 0.1.3"
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert __version__ == metadata["project"]["version"]
+    assert version.stdout.strip() == f"csetty-mips {__version__}"
 
 
 def test_debugger_break_step_reverse_and_disassemble() -> None:
