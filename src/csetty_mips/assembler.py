@@ -635,6 +635,7 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
     allow_macros = True
     setting_stack: list[tuple[bool, bool]] = []
     active_filename: str | None = None
+    pending_labels: dict[Section, list[str]] = {part: [] for part in _SECTION_BASES}
 
     def define(name: str, value: int, source: SourceRef) -> None:
         nonlocal symbol_count
@@ -657,6 +658,20 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
         result.update(local_symbols.get(filename, {}))
         return result
 
+    def define_labels(labels: Sequence[str], address: int, source: SourceRef) -> None:
+        # Define immediately so earlier expressions keep their existing snapshot
+        # semantics. Only labels awaiting storage are eligible for relocation;
+        # constants with the same integer value must never be moved.
+        for label in labels:
+            define(label, address, source)
+            pending_labels[section].append(label)
+
+    def align_pending_labels(address: int, filename: str) -> None:
+        for label in pending_labels[section]:
+            local_symbols[filename][label] = address
+            if label in declarations.get(filename, set()):
+                global_symbols[label] = address
+
     for statement in statements:
         if statement.source.filename != active_filename:
             active_filename = statement.source.filename
@@ -664,15 +679,15 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
             allow_at = True
             allow_macros = True
             setting_stack = []
+            # Translation-unit boundaries must not relocate another file's labels.
+            pending_labels = {part: [] for part in _SECTION_BASES}
         current = addresses[section]
         operation = statement.operation
         if operation is None:
-            for label in statement.labels:
-                define(label, current, statement.source)
+            define_labels(statement.labels, current, statement.source)
             continue
         if operation in {".text", ".data", ".ktext", ".kdata"}:
-            for label in statement.labels:
-                define(label, current, statement.source)
+            define_labels(statement.labels, current, statement.source)
             _operand_count(operation, statement.operands, (0, 1), statement.source)
             section = {
                 ".text": Section.TEXT,
@@ -707,11 +722,14 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
                     raise AssemblyError(
                         "A213", f"{operation} address must be word aligned", statement.source
                     )
+                # An explicit new origin is a location boundary, not alignment
+                # of the next object at the old cursor.
+                if requested != addresses[section]:
+                    pending_labels[section].clear()
                 addresses[section] = requested
             continue
         if operation in {".eqv", ".equ"}:
-            for label in statement.labels:
-                define(label, current, statement.source)
+            define_labels(statement.labels, current, statement.source)
             name, expression = _split_constant_operands(statement)
             if _SYMBOL_NAME.fullmatch(name) is None:
                 raise AssemblyError("A214", f"invalid constant name {name!r}", statement.source)
@@ -722,8 +740,7 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
             )
             continue
         if operation == ".set":
-            for label in statement.labels:
-                define(label, current, statement.source)
+            define_labels(statement.labels, current, statement.source)
             _operand_count(operation, statement.operands, 1, statement.source)
             setting = statement.operands[0].strip().lower()
             if setting == "at":
@@ -751,21 +768,24 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
             continue
         address = addresses[section]
         if operation.startswith("."):
+            define_labels(statement.labels, address, statement.source)
             effective_address, size = _directive_size(
                 statement,
                 section,
                 address,
                 visible_symbols(statement.source.filename),
             )
-            label_address = address if operation in {".align", ".balign"} else effective_address
-            for label in statement.labels:
-                define(label, label_address, statement.source)
+            if effective_address != address:
+                align_pending_labels(effective_address, statement.source.filename)
             address = effective_address
             located.append(_LocatedStatement(statement, section, address, size))
             addresses[section] = address + size
+            # Padding / zero-sized metadata is not an object. Keep labels pending
+            # through consecutive alignments, empty strings and .space 0.
+            if size:
+                pending_labels[section].clear()
         else:
-            for label in statement.labels:
-                define(label, address, statement.source)
+            define_labels(statement.labels, address, statement.source)
             if section not in _TEXT_SECTIONS:
                 raise AssemblyError(
                     "A215", "instructions may only appear in a text section", statement.source
@@ -784,6 +804,7 @@ def _first_pass(statements: Sequence[ParsedStatement], limits: Limits) -> _First
             size = words * 4
             located.append(_LocatedStatement(statement, section, address, size))
             addresses[section] += size
+            pending_labels[section].clear()
         if addresses[Section.TEXT] - TEXT_BASE > limits.max_text_words * 4:
             raise AssemblyError(
                 "A216", f"text exceeds {limits.max_text_words} words", statement.source

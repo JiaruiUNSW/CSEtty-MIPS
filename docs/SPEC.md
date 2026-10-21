@@ -112,6 +112,22 @@ Supported directives:
 .ascii .asciiz .byte .half .word .float .double .space
 ```
 
+Labels preceding explicit `.align` or automatic `.half/.word/.float/.double`
+alignment bind to the aligned storage address, including standalone labels,
+multiple aliases and exported symbols. Labels remain pending until their
+section emits a nonempty object/instruction. Consecutive alignments, metadata,
+empty strings, `.space 0`, and same-file section round trips preserve them.
+Previously emitted objects are never relocated. `.balign` is a local extension
+with the same label-binding rule and a power-of-two byte alignment argument.
+
+`.align 0` inserts no padding of its own; it does not disable automatic typed-data
+alignment. Constants remain snapshots of expressions when defined, even if a
+referenced pending label is subsequently aligned. Pending labels do not cross
+source-file boundaries or an explicit change of section origin. Alignment
+padding remains uninitialized and counts toward section limits; ordinary
+unaligned `lw/sw/lh/sh` accesses still fault. These rules do not promise identical
+behavior to every MIPS assembler dialect.
+
 `.set at/noat`, `.set macro/nomacro`, and `.set push/pop` are enforced per
 source file. `.set reorder/noreorder` are accepted; the assembler itself never
 reorders instructions.

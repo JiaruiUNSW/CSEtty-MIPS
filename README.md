@@ -5,10 +5,15 @@ assembler, simulator, disassembler, and time-travel debugger. It is the MIPS
 runtime used by CSEExamTTY, but is developed and released as a standalone
 Python package.
 
+Version `0.1.4` fixes labels before explicit/automatic alignment, including
+standalone labels, aliases and exported symbols.
+See [the alignment audit](docs/ALIGNMENT_AUDIT_2026-10-21.md) and the updated
+[local specification](docs/SPEC.md) for this build's behavior.
+
 This project is not a fork, port, or redistribution of `insou22/mipsy`. It
 contains no upstream mipsy source, binary, tests, generated files, or copied
 diagnostic text. The
-[provenance record](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/docs/PROVENANCE.md)
+[provenance record](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.4/docs/PROVENANCE.md)
 documents the clean-room boundary and public architectural references.
 
 The project is not made, managed, endorsed, or authenticated by UNSW or the
@@ -19,7 +24,7 @@ UNSW School of Computer Science and Engineering.
 Python 3.11 or newer is required.
 
 ```sh
-python3 -m pip install csetty-mips==0.1.3
+python3 -m pip install csetty-mips==0.1.4
 ```
 
 For an editable development checkout:
@@ -59,9 +64,9 @@ assert machine.io.output == b"42"
 
 The supported instruction, directive, syscall, debugger, filesystem, and
 resource-limit contracts are documented in the
-[specification](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/docs/SPEC.md).
+[specification](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.4/docs/SPEC.md).
 The
-[acceptance matrix](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/docs/ACCEPTANCE_MATRIX.md)
+[acceptance matrix](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.4/docs/ACCEPTANCE_MATRIX.md)
 records executable coverage and deliberate non-goals.
 
 ## Verify
@@ -80,5 +85,5 @@ fixture; its absence causes one test to skip.
 
 The source code in this repository is licensed under the Mozilla Public
 License 2.0. See
-[LICENSE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/LICENSE) and
-[NOTICE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.3/NOTICE).
+[LICENSE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.4/LICENSE) and
+[NOTICE](https://github.com/JiaruiUNSW/CSEtty-MIPS/blob/v0.1.4/NOTICE).
