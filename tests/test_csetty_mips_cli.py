@@ -4,6 +4,7 @@ import io
 import os
 import subprocess
 import sys
+import tomllib
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -280,6 +281,8 @@ def test_cli_move_label_step_limit_stdin_source_and_version(tmp_path: Path) -> N
         text=True,
     )
     assert version.returncode == 0
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert __version__ == metadata["project"]["version"]
     assert version.stdout.strip() == f"csetty-mips {__version__}"
 
 
