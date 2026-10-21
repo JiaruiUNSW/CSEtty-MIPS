@@ -89,6 +89,9 @@ python -m build
 SPIM is an optional black-box oracle for one independently authored overlap
 fixture; its absence causes one test to skip.
 
+Maintainers: see [the release procedure](docs/RELEASING.md) for GitHub/PyPI
+publishing and downstream browser bundle verification.
+
 ## License
 
 The source code in this repository is licensed under the Mozilla Public

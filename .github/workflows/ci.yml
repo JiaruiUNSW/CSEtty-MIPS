@@ -23,3 +23,4 @@ jobs:
       - run: ruff check src tests
       - run: mypy src/csetty_mips
       - run: pytest -q
+      - run: python -m build
