@@ -38,8 +38,8 @@ jobs:
           git merge-base --is-ancestor HEAD refs/remotes/origin/main
       - name: Build and check distributions
         run: |
-          python -m pip install build twine
-          python -m build
+          python -m pip install --force-reinstall --require-hashes --only-binary=:all: -r .github/requirements-release.txt
+          python -m build --no-isolation
           python -m twine check --strict dist/*
           mkdir checksums
           (cd dist && sha256sum *.whl *.tar.gz) > checksums/SHA256SUMS

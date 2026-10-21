@@ -27,6 +27,17 @@ source. GitHub release asset upload runs in a separate job with repository
 write access but no PyPI identity. All Actions are pinned to commit hashes.
 No long-lived PyPI token or repository secret is required.
 
+The build/check toolchain and its complete dependency set are pinned with
+SHA-256 hashes in `.github/requirements-release.txt`. CI installs this same lock
+with `--force-reinstall --require-hashes --only-binary=:all:`. This also replaces
+any matching preinstalled version with a hash-verified wheel. Builds use `--no-isolation`
+so PEP 517 cannot fetch a different build backend at publication time.
+To update the lock, edit `.github/requirements-release.in`, regenerate it with
+`uv pip compile --python-version 3.11 --universal --generate-hashes
+.github/requirements-release.in -o .github/requirements-release.txt`, and
+review and test the resulting diff before merging. The release job does not
+run the resolver or update the lock.
+
 If a job fails, inspect its logs before retrying. Release uploads deliberately
 do not overwrite existing assets, so a partially uploaded release requires
 checking the existing files and their digests before any manual recovery.
