@@ -23,8 +23,11 @@ UNSW School of Computer Science and Engineering.
 
 Python 3.11 or newer is required.
 
+Version 0.1.4 is distributed through GitHub Releases. PyPI remains on 0.1.3
+for this release; install the 0.1.4 wheel directly:
+
 ```sh
-python3 -m pip install csetty-mips==0.1.4
+python3 -m pip install https://github.com/JiaruiUNSW/CSEtty-MIPS/releases/download/v0.1.4/csetty_mips-0.1.4-py3-none-any.whl
 ```
 
 For an editable development checkout:
