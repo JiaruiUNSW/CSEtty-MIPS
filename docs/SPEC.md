@@ -95,6 +95,14 @@ If another file needs to call a function or access a label, export that symbol.
 Duplicate definitions, unknown symbols, invalid operands, and unsafe uses of
 `$at` are reported at the relevant source line.
 
+Define constants with `NAME = EXPR`, `.eqv`, or `.equ`:
+
+```asm
+COUNT = 5
+.eqv STEP, 1
+.equ BYTES, COUNT * 4
+```
+
 ### Directives
 
 The supported directives are:
@@ -248,9 +256,12 @@ directory: absolute paths, parent traversal, backslashes, NULs, and symlinks
 are rejected.
 
 Writes are staged while the program runs. A successful normal CLI run commits
-changed files using per-file atomic replacement. In the debugger, use
-`commit-files` to save them explicitly. That command clears step history:
-changes already committed to the host filesystem cannot be undone with `back`.
+changed files; in the debugger, use `commit-files` to save them explicitly.
+Each file is replaced atomically, but the files are saved one at a time. If a
+later save fails, earlier files stay changed.
+
+`commit-files` clears step history even when a save fails. Changes already
+saved to the host filesystem cannot be undone with `back`.
 
 ## Debugger
 
