@@ -1,44 +1,19 @@
-# csetty-mips specification
+# MIPS and debugger reference
 
-Status: implemented standalone package contract, revision 4
-Baseline date: 2026-08-06
+This page covers the command-line tool, assembly syntax, supported instructions,
+and runtime behavior. For a first program and a debugging walkthrough, see
+[Getting started](GETTING_STARTED.md).
 
-## 1. Scope and compatibility target
+- [Command line](#command-line)
+- [Registers and memory](#registers-and-memory)
+- [Assembly syntax](#assembly-syntax)
+- [Instructions](#instructions)
+- [Syscalls and files](#syscalls-and-files)
+- [Debugger](#debugger)
+- [Limits](#limits)
+- [Unsupported features](#unsupported-features)
 
-`csetty-mips` is an independently implemented educational MIPS32 assembler,
-simulator, disassembler, and time-travel debugger. This revision covers the
-standalone Python package in `src/csetty_mips` and the `csetty-mips` command.
-CSEExamTTY consumes the released package as an external dependency; its course
-command and container integration are outside this repository.
-
-The compatibility target is the public COMP1521/mipsy teaching surface:
-
-- the current public COMP1521 MIPS instruction, pseudo-instruction, directive,
-  memory, and syscall guide;
-- the public product properties claimed by mipsy: source-aware diagnostics,
-  initialization checks, an interactive debugger, and reverse execution; and
-- independently specified MIPS32 instruction encodings and integer semantics.
-
-This is not a claim to implement every MIPS32 revision, privileged operation,
-or undocumented behavior of a particular mipsy build. The exact supported
-surface and deliberate non-goals are normative below.
-
-## 2. Independence and licensing
-
-This is not a fork, port, translation, or vendored copy of `insou22/mipsy`.
-Upstream source, tests, tables, generated files, assets, and diagnostic wording
-are not implementation inputs and are not distributed in the package. Public
-upstream pages are used only to identify user-visible claims and an openly
-published compatibility surface.
-
-The implementation is covered by this repository's MPL-2.0 `LICENSE`.
-Functional facts such as architectural register numbers, instruction names,
-binary encodings, and syscall numbers are independently recorded in local code
-and tests. See `docs/PROVENANCE.md` for the clean-room ledger.
-
-## 3. Public interfaces
-
-The installed command is:
+## Command line
 
 ```text
 csetty-mips [OPTIONS] FILE... [-- PROGRAM_ARG...]
@@ -52,17 +27,31 @@ csetty-mips --move-label OLD=NEW FILE...
 csetty-mips --version
 ```
 
-Execution options are `--trace`, `--max-steps`, `--history`, `--fs-root`, and
-`--relaxed`/`--spim`. Diagnostics go to stderr, program output goes to stdout,
-and already-produced output is retained if a later instruction faults. Exit
-codes are 0 for success, 1 for assembly/runtime failure, 2 for invalid command
-usage, and 130 for interruption. Syscall 17 is returned modulo 256 by the CLI.
+With no filename, `csetty-mips` opens the debugger; use `load FILE...` there to
+load a program. Pass several filenames to assemble them together.
 
-The typed Python API exports `assemble`, `SourceUnit`, `Program`, `Machine`,
-`Debugger`, `Limits`, `DEFAULT_LIMITS`, and the public error classes. A
-`py.typed` marker is included in the wheel.
+| Option | Use it to |
+|---|---|
+| `--check` / `--compile` | Assemble without running the program |
+| `--check-no-main` | Check a file that has no `main`, such as a data-only file |
+| `--hex`, `--hex-pad-zero` | Print encoded instruction words, optionally padded to eight hex digits |
+| `--trace` | Follow executed instructions in a normal command-line run |
+| `--max-steps N` | Set the instruction limit |
+| `--history N` | Set how many steps can be reversed |
+| `--fs-root DIR` | Allow file syscalls inside an existing directory |
+| `--relaxed` / `--spim` | Read uninitialized registers and memory as zero |
+| `--move-label OLD=NEW` | Resolve references to `OLD` through `NEW` |
 
-## 4. Architectural and memory model
+Program output goes to stdout; diagnostics go to stderr. Output already printed
+is kept if the program later fails. Exit codes are `0` for success, `1` for an
+assembly or runtime error, `2` for invalid command usage, and `130` for an
+interrupted run. A status supplied to syscall 17 is returned modulo 256.
+
+For Python use, the package exports `assemble`, `SourceUnit`, `Program`,
+`Machine`, `Debugger`, `Limits`, `DEFAULT_LIMITS`, and error classes. Type hints
+are included. See the [Python example](../README.md#python-api).
+
+## Registers and memory
 
 - 32 general-purpose 32-bit registers, immutable `$zero`, `HI`, `LO`, and a
   32-bit `PC`; `$s0`–`$s7`, `$gp`, `$sp`, `$fp`, `$ra`, `argc`, and `argv` have
@@ -75,7 +64,7 @@ The typed Python API exports `assemble`, `SourceUnit`, `Program`, `Machine`,
   `argv` and exposed as `argc`/`argv` in `$a0`/`$a1`; assembler source filenames
   are not inserted as an implicit `argv[0]`.
 
-| Segment | Base | Contract |
+| Segment | Base | Size and access |
 |---|---:|---|
 | user text | `0x00400000` | initial 256 KiB, writable and executable |
 | user data/heap | `0x10000000` | initial 256 KiB, grows to at most 1 MiB |
@@ -83,27 +72,40 @@ The typed Python API exports `assemble`, `SourceUnit`, `Program`, `Machine`,
 | kernel text | `0x80000000` | emitted by assembler but protected in user execution |
 | kernel data | `0x90000000` | emitted by assembler but protected in user execution |
 
-Memory is sparse, permission checked, alignment checked, initialization tracked,
-and page bounded. Every simulated write is transactional, including page
-allocation. Reverse execution restores byte values, initialized bits, and pages
-created by the reversed instruction. `--relaxed`/`--spim` changes uninitialized
-register, `HI`/`LO`, FPR, and memory reads to zero; all other safety checks remain.
+Memory is allocated as needed. Reading uninitialized bytes, using a misaligned
+address, or accessing protected memory raises an error. A failed write leaves
+memory unchanged. Stepping backward restores the old bytes and initialization
+state, and releases pages created by that instruction.
 
-## 5. Source language and assembler
+`--relaxed`/`--spim` reads uninitialized registers, `HI`/`LO`, floating-point
+registers, and memory as zero. It does not turn off alignment, access, or
+resource-limit checks.
 
-The parser accepts multiple uniquely named UTF-8 files, `#`/`;` comments,
-multiple labels, named/numeric registers, escaped string and character literals,
-legacy octal plus binary/decimal/hex integers, memory operands, constant
-assignments, and source expressions. Expressions are parsed without `eval` and
-support C-like unary, arithmetic, shift, comparison, bitwise, and short-circuit
-logical operators plus `%hi(...)` and `%lo(...)`.
+## Assembly syntax
+
+Source files use UTF-8. You can use `#` or `;` comments, named or numeric
+registers, multiple labels at one address, escaped strings and characters, and
+binary, octal, decimal, or hexadecimal integers. Constants and operands accept
+C-like unary, arithmetic, shift, comparison, bitwise, and short-circuit logical
+expressions, plus `%hi(...)` and `%lo(...)`. Each source file needs a unique name
+when passed to the Python API.
 
 Symbols are local to a source file unless declared with `.globl`/`.global`.
-Duplicate local/global definitions, invisible cross-file references, invalid
-entry points, pass-size disagreement, ranges, alignment, and reserved `$at`
-collisions are diagnosed with stable source-linked codes.
+If another file needs to call a function or access a label, export that symbol.
+Duplicate definitions, unknown symbols, invalid operands, and unsafe uses of
+`$at` are reported at the relevant source line.
 
-Supported directives:
+Define constants with `NAME = EXPR`, `.eqv`, or `.equ`:
+
+```asm
+COUNT = 5
+.eqv STEP, 1
+.equ BYTES, COUNT * 4
+```
+
+### Directives
+
+The supported directives are:
 
 ```text
 .text .data .ktext .kdata
@@ -112,27 +114,48 @@ Supported directives:
 .ascii .asciiz .byte .half .word .float .double .space
 ```
 
-Labels preceding explicit `.align` or automatic `.half/.word/.float/.double`
-alignment bind to the aligned storage address, including standalone labels,
-multiple aliases and exported symbols. Labels remain pending until their
-section emits a nonempty object/instruction. Consecutive alignments, metadata,
-empty strings, `.space 0`, and same-file section round trips preserve them.
-Previously emitted objects are never relocated. `.balign` is a local extension
-with the same label-binding rule and a power-of-two byte alignment argument.
+`.space` reserves uninitialized bytes. Use a data directive such as `.word 0`
+when you need an initialized value. `.half`, `.word`, `.float`, and `.double`
+automatically align their data.
 
-`.align 0` inserts no padding of its own; it does not disable automatic typed-data
-alignment. Constants remain snapshots of expressions when defined, even if a
-referenced pending label is subsequently aligned. Pending labels do not cross
-source-file boundaries or an explicit change of section origin. Alignment
-padding remains uninitialized and counts toward section limits; ordinary
-unaligned `lw/sw/lh/sh` accesses still fault. These rules do not promise identical
-behavior to every MIPS assembler dialect.
+### Alignment
+
+`.align N` advances to a multiple of `2**N` bytes. A label immediately before
+the directive points to the aligned storage, not the padding:
+
+```asm
+.data
+prefix: .byte 1, 2, 3
+buffer:
+    .align 2
+    .space 4
+```
+
+Here `buffer` is word-aligned, but still needs a store before a load. Putting
+the label on the `.align` line has the same effect. Multiple labels for the
+same storage move together, including exported labels.
+
+An alignment can move a label until that section emits a nonempty object or
+instruction. Consecutive alignments, empty strings, `.space 0`, metadata, and
+switching away from a section and back within one file do not end that group.
+An explicit change of section origin or the end of a source file does. Already
+emitted data never moves. Constants keep the value calculated when they were
+defined, even if a label used in that calculation moves later.
+
+`.align 0` adds no padding; it does not disable automatic typed-data alignment.
+`.balign` takes a power-of-two byte count instead of an exponent, so
+`.balign 4` aligns like `.align 2`. It is a csetty-mips extension.
+
+Padding is uninitialized and counts toward the section limit. Ordinary
+`lw`/`sw` still require four-byte alignment; `lh`/`sh` require two-byte alignment.
 
 `.set at/noat`, `.set macro/nomacro`, and `.set push/pop` are enforced per
 source file. `.set reorder/noreorder` are accepted; the assembler itself never
 reorders instructions.
 
-Supported real instructions (91 total):
+## Instructions
+
+The following 91 instructions are supported:
 
 ```text
 add addu addi addiu sub subu
@@ -149,22 +172,27 @@ tge tgeu tlt tltu teq tne tgei tgeiu tlti tltiu teqi tnei
 syscall break
 ```
 
-Supported pseudo-instructions and course overloads:
+### Pseudo-instructions
+
+These expand into one or more machine instructions:
 
 ```text
 nop move clear not neg negu li la
-two-operand/self and one-immediate overloads for integer arithmetic/logical/compare
-two-operand immediate forms for addi addiu andi ori xori slti sltiu
-one-operand self forms for abs neg negu not clz clo seb seh
-immediate-source forms for mult multu div divu tge tgeu tlt tltu teq tne mthi mtlo
-two-operand/self and immediate-source forms for integer shifts
-b bal beq-immediate bne-immediate beqz bnez
+b bal beqz bnez
 blt ble bgt bge bltu bleu bgtu bgeu
 seq sne sge sgt sle sgeu sgtu sleu
 seqi snei sgei sgti slei sequi sneui sgeui sgtui sleui
-abs mul-immediate div-3-operand divu-3-operand rem remu rol ror
+abs rem remu rol ror
 push pop begin end tgt tgtu tgti tgtiu tle tleu tlei tleiu
-symbolic and full-width memory-address forms
+```
+
+The assembler also accepts immediate operands, shorter operand lists, and
+symbolic or full-width memory addresses where described below. For example:
+
+```asm
+add  $t0, $t1, 1     # Add an immediate value
+addi $t0, 1          # Equivalent to addi $t0, $t0, 1
+div  $t2, $t1, 2     # Store the quotient in $t2
 ```
 
 For `add`, `addu`, `sub`, `subu`, `and`, `or`, `xor`, `nor`, `slt`, `sltu`, and
@@ -191,14 +219,14 @@ single immediate. Two-operand `rem`/`remu` and `rol`/`ror` use the destination a
 the first source. All expansions honor `.set noat`, `.set nomacro`, and `$at`
 input-collision checks.
 
-Assembler passes assign all four sections, expand pseudos deterministically,
-resolve local/global symbols and expressions, emit data plus real instruction
-words, validate canonical reserved fields, and create a per-word source map.
-The runtime executes emitted words rather than parser objects.
+Pseudo-instructions execute as their expanded machine instructions. In the
+command-line debugger, `step` advances one of those instructions, not
+necessarily a whole source line. The disassembler shows the expanded form.
 
-## 6. Runtime services
+## Syscalls and files
 
-All public COMP1521 services 1–17 are implemented:
+Set `$v0` to the service number, supply its arguments, then execute `syscall`.
+The supported services are:
 
 | Service | Operation |
 |---:|---|
@@ -220,72 +248,103 @@ All public COMP1521 services 1–17 are implemented:
 | 16 | close a file descriptor, including standard descriptors |
 | 17 | exit with the supplied status |
 
-File services operate on a reversible virtual filesystem. Host access is
-disabled unless an existing `--fs-root` is explicitly supplied. Absolute paths,
-parent traversal, backslashes, NULs, symlink traversal, and paths outside the
-root are rejected. Writes remain staged during simulation. A successful normal
-CLI run commits dirty files using per-file atomic replacement; the debugger
-requires `commit-files`, which clears history because host commits cannot be
-reversed.
+### File access
 
-## 7. Diagnostics and debugger
+File operations use a virtual filesystem. To allow access to host files, pass
+an existing directory with `--fs-root DIR`. Paths must stay within that
+directory: absolute paths, parent traversal, backslashes, NULs, and symlinks
+are rejected.
 
-Strict mode reports source-linked faults for uninitialized state, overflow on
-trapping arithmetic, division by zero, true traps, reserved encodings,
-misalignment, unmapped/protected memory, output/input limits, and instruction
-limits. A failed instruction restores all simulator state before reporting.
+Writes are staged while the program runs. A successful normal CLI run commits
+changed files; in the debugger, use `commit-files` to save them explicitly.
+Each file is replaced atomically, but the files are saved one at a time. If a
+later save fails, earlier files stay changed.
 
-The debugger supports:
+`commit-files` clears step history even when a save fails. Changes already
+saved to the host filesystem cannot be undone with `back`.
+
+## Debugger
+
+Start with `csetty-mips --interactive program.s`, or run `csetty-mips` without
+arguments and enter `load program.s` at the prompt.
 
 ```text
-load run continue step back
-break delete breaks watch unwatch
-print registers fregisters examine disassemble
-context labels output commit-files reset help quit
+run                       restart from the beginning and run
+continue                  resume from the current instruction
+step [N]                  execute N machine instructions (default 1)
+back [N]                  undo N recorded instructions (default 1)
+break TARGET              stop before a label, address, or file:line
+delete TARGET|all         remove breakpoints
+breaks                    list breakpoints
+watch $REG|$fN|ADDRESS     stop when a register or memory byte changes
+unwatch TARGET|all        remove watchpoints
+print EXPR                inspect a register, symbol, or expression
+registers                 show integer registers
+fregisters                show raw floating-point registers
+examine ADDRESS [COUNT]   show memory words (default 1)
+disassemble [ADDR] [N]    show decoded instructions (default 10)
+context                   show the current source and instruction
+labels                    list labels and addresses
+output                    show buffered program output
+commit-files              save staged files under --fs-root
+reset                     restore the initial machine state
+help                      list commands
+quit                      leave the debugger
 ```
 
-Targets may be labels, numeric addresses, or `file:line`. Watchpoints cover
-integer registers, FPRs, and memory bytes. A bounded step record restores PC,
-register/FPR initialization, `HI`/`LO`, reservation, heap/data boundary, sparse
-pages, input position, buffered output, exit state, standard descriptors, and
-virtual filesystem state.
+For example, `break loop` stops before the instruction at `loop`, `print $t0`
+shows a register, and `watch $s0` stops when `$s0` changes. Breakpoint targets
+may also be numeric addresses or locations such as `sum.s:9`.
+
+`back` restores registers, `HI`/`LO`, memory, input position, buffered output,
+exit state, and virtual files. It also restores initialization state, heap
+boundaries, allocated pages, descriptors, and the `ll`/`sc` reservation. It
+cannot erase text that has already appeared in your terminal; use `output` to
+see the program's current output buffer.
 
 Normal non-debug CLI execution records no history unless `--history` is given.
-The API/debugger default is 10,000 records, and the CLI rejects values over
-100,000.
+The API and debugger keep a bounded history; see [Limits](#limits) below.
 
-## 8. Default resource limits
+### Errors
 
-Defaults are configurable through `Limits` and include 1 MiB source, 250,000
-statements, 100,000 symbols, 64K user-text words, 16K kernel-text words, 1 MiB
-for each data section, 256 KiB stack, 8,192 allocated pages, 10 million executed
-instructions, 16 MiB input, 4 MiB output, 1 MiB tokens/strings, 64 open files,
-16 MiB per file, and 64 MiB total virtual-file data.
+Execution stops on uninitialized reads, signed overflow in trapping arithmetic,
+division by zero, true trap conditions, invalid encodings, misaligned or
+protected addresses, and exceeded limits. The diagnostic points to the source
+line where available. A failed instruction leaves the simulator at its
+pre-instruction state, so you can inspect it in the debugger.
 
-## 9. Deliberate non-goals
+## Limits
+
+The Python package uses the defaults below. Pass a `Limits` object to the
+Python API to change them; the CLI exposes `--max-steps` and `--history`.
+MIPS Studio uses separate limits for interactive browser sessions.
+
+| Resource | Default |
+|---|---:|
+| Source text | 1 MiB |
+| Statements / symbols | 250,000 / 100,000 |
+| User / kernel text | 64K / 16K instruction words |
+| User / kernel data | 1 MiB each |
+| Stack | 256 KiB |
+| Allocated memory pages | 8,192 |
+| Executed instructions | 10 million |
+| Recorded history | 10,000 steps in the API/debugger; none in a normal CLI run |
+| Input / output | 16 MiB / 4 MiB |
+| Input tokens / strings | 1 MiB each |
+| Open files | 64 |
+| File path | 4,096 bytes |
+| One virtual file / all virtual files | 16 MiB / 64 MiB |
+
+The CLI accepts at most 100,000 history records.
+
+## Unsupported features
 
 - big-endian execution, branch delay slots, branch-likely instructions;
 - privileged/kernel execution, exceptions/interrupts, MMU/TLB behavior;
 - floating-point arithmetic, comparison, rounding modes, or FP exceptions
   (raw COP1 transfers, memory operations, and I/O syscalls are supported);
-- every instruction from every MIPS32 revision; and
-- byte-for-byte reproduction of undocumented mipsy CLI/debugger wording.
+- instructions outside the list above.
 
-Unsupported instructions and syscalls fail explicitly; they are never silently
-treated as no-ops.
-
-## 10. Package acceptance
-
-Completion of this package requires:
-
-- Ruff and strict mypy success for `src/csetty_mips`;
-- exhaustive declared-instruction encoding coverage plus semantic family,
-  boundary, atomicity, parser, directive, pseudo, syscall, filesystem,
-  debugger, reverse-execution, CLI, and resource-limit tests;
-- independently authored instruction, runtime, and SPIM-overlap fixtures passing;
-- an optional SPIM black-box overlap fixture with identical output;
-- a built wheel that installs, exposes `csetty-mips`, imports the typed API, and
-  runs on supported Python 3.11+ environments.
-
-Course integration is specified and verified separately by the downstream
-CSEExamTTY project.
+Unsupported instructions and syscalls produce an error; they are not treated
+as no-ops. For tests and past compatibility comparisons, see
+[Test coverage](ACCEPTANCE_MATRIX.md).
